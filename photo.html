@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>婚礼现场照片 - 精修版</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: rgba(255,255,255,0.95);
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+        
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 100%;
+            padding: 15px;
+        }
+        
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .photo-item {
+            aspect-ratio: 4/3;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #f8f9fa;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .photo-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s;
+        }
+        
+        .photo-item:active img {
+            transform: scale(0.95);
+        }
+        
+        .preview-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+        }
+        
+        .preview-content {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .preview-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 15px; right: 15px;
+            color: white;
+            font-size: 20px;
+            background: rgba(0,0,0,0.5);
+            width: 35px; height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+            border: none;
+        }
+        
+        .nav-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            color: white;
+            font-size: 20px;
+            background: rgba(0,0,0,0.5);
+            width: 35px; height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            z-index: 1001;
+        }
+        
+        .prev-btn { left: 15px; }
+        .next-btn { right: 15px; }
+        
+        .counter {
+            position: absolute;
+            top: 15px; left: 15px;
+            color: white;
+            font-size: 12px;
+            background: rgba(0,0,0,0.5);
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            padding: 40px 20px;
+        }
+        
+        .error {
+            text-align: center;
+            color: #ff6b6b;
+            padding: 40px 20px;
+            background: rgba(255,255,255,0.9);
+            margin: 20px;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>💕 婚礼现场照片 - 精修版 💕</h1>
+        <div class="subtitle">滑动浏览美好回忆 · 自动加载所有图片</div>
+    </div>
+    
+    <div class="container">
+        <div class="photo-grid" id="photoGrid">
+            <div class="loading">正在加载图片...</div>
+        </div>
+    </div>
+    
+    <div class="preview-modal" id="previewModal">
+        <button class="close-btn" onclick="closePreview()">×</button>
+        <div class="counter" id="imageCounter">1 / 0</div>
+        <button class="nav-btn prev-btn" onclick="changeImage(-1)">‹</button>
+        <div class="preview-content">
+            <img class="preview-img" id="previewImage" src="" alt="">
+        </div>
+        <button class="nav-btn next-btn" onclick="changeImage(1)">›</button>
+    </div>
+    
+    <script>
+        // OSS配置 - 根据您的路径修改
+        const OSS_CONFIG = {
+            bucket: 'edu-7516',
+            region: 'oss-cn-beijing',
+            folder: '婚礼现场/精修/'  // 您的文件夹路径
+        };
+        
+        const OSS_BASE_URL = `https://${OSS_CONFIG.bucket}.${OSS_CONFIG.region}.aliyuncs.com/`;
+        let allImages = [];
+        let currentImageIndex = 0;
+        
+        // 常见的图片扩展名
+        const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.JPG', '.JPEG', '.PNG', '.WEBP', '.GIF', '.BMP'];
+        
+        // 模拟获取文件夹文件列表（实际需要后端API支持）
+        async function loadImageList() {
+            try {
+                // 方案1: 如果您有已知的文件列表
+                const knownImages = await loadKnownImages();
+                
+                // 方案2: 如果需要自动扫描，需要后端API支持
+                // const scannedImages = await scanFolderAPI();
+                
+                allImages = knownImages;
+                renderPhotoGrid();
+                
+            } catch (error) {
+                console.error('加载图片失败:', error);
+                showError('加载图片失败，请检查网络连接');
+            }
+        }
+        
+        // 方案1: 手动指定已知图片列表（修改这里为您实际的图片）
+        async function loadKnownImages() {
+            // 这里列出您OSS文件夹中实际存在的图片文件名
+            // 您可以通过OSS控制台查看具体的文件名
+            const imageFiles = [
+                '8F2A0003.jpg',
+
+
+'8F2A0072.jpg',
+
+
+'8F2A0100.jpg',
+
+
+'8F2A0159.jpg',
+
+
+'8F2A0245.jpg',
+
+
+'8F2A0578.jpg',
+
+
+'8F2A0582.jpg',
+
+
+'8F2A0596.jpg',
+
+
+'8F2A0608.jpg',
+
+
+'8F2A0630.jpg',
+
+
+'8F2A0636.jpg',
+
+
+'8F2A0637.jpg',
+
+
+'8F2A0644.jpg',
+
+
+'8F2A0656.jpg',
+
+
+'8F2A0661.jpg',
+
+
+'8F2A0675.jpg',
+
+
+'8F2A0687.jpg',
+
+
+'8F2A0752.jpg',
+
+
+'8F2A0761.jpg',
+
+
+'8F2A0770.jpg',
+
+
+'8F2A0797.jpg',
+
+
+'8F2A0820.jpg',
+
+
+'8F2A0836.jpg',
+
+
+'8F2A0869.jpg',
+
+
+'8F2A0875.jpg',
+
+
+'8F2A0907.jpg',
+
+
+'8F2A0936.jpg',
+
+
+'8F2A1187.jpg',
+
+
+'8F2A1331.jpg',
+
+
+'8F2A1338.jpg',
+
+
+'8F2A1360.jpg',
+
+
+'8F2A1412.jpg',
+
+
+'8F2A1493.jpg',
+
+
+'8F2A1534.jpg',
+
+
+'8F2A1569.jpg',
+
+
+'8F2A1609.jpg',
+
+
+'8F2A1636.jpg',
+
+
+'8F2A1651.jpg',
+
+
+'8F2A1792.jpg',
+
+
+'8F2A1801.jpg',
+
+
+'8F2A1811.jpg',
+
+
+'8F2A1885.jpg',
+
+
+'8F2A1925.jpg',
+
+
+'8F2A1946.jpg',
+
+
+'8F2A1969.jpg',
+
+
+'8F2A2067.jpg',
+
+
+'8F2A2080.jpg',
+
+
+'8F2A2146.jpg',
+
+
+'8F2A2212.jpg',
+
+
+'8F2A2226.jpg'
+
+
+                // 继续添加所有图片文件名...
+            ];
+            
+            return imageFiles.map(filename => ({
+                filename: filename,
+                url: OSS_BASE_URL + encodeURIComponent(OSS_CONFIG.folder + filename),
+                title: '婚礼现场照片'
+            }));
+        }
+        
+        // 方案2: 如果需要自动扫描文件夹，需要后端API（示例代码）
+        async function scanFolderAPI() {
+            // 这里需要您自己实现一个后端API来扫描OSS文件夹
+            // 示例API调用
+            const response = await fetch('/api/oss-list?folder=' + encodeURIComponent(OSS_CONFIG.folder));
+            const data = await response.json();
+            return data.files.filter(file => 
+                IMAGE_EXTENSIONS.some(ext => file.name.endsWith(ext))
+            ).map(file => ({
+                filename: file.name,
+                url: OSS_BASE_URL + encodeURIComponent(OSS_CONFIG.folder + file.name),
+                title: '婚礼现场照片'
+            }));
+        }
+        
+        // 渲染图片网格
+        function renderPhotoGrid() {
+            const grid = document.getElementById('photoGrid');
+            
+            if (allImages.length === 0) {
+                grid.innerHTML = '<div class="error">未找到图片文件</div>';
+                return;
+            }
+            
+            grid.innerHTML = '';
+            
+            allImages.forEach((image, index) => {
+                const item = document.createElement('div');
+                item.className = 'photo-item';
+                item.innerHTML = `
+                    <img 
+                        src="${image.url}" 
+                        alt="${image.title}"
+                        loading="lazy"
+                        onclick="openPreview(${index})"
+                        onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\'color:#999;text-align:center;padding:20px\'>加载失败</div>'"
+                    >
+                `;
+                grid.appendChild(item);
+            });
+        }
+        
+        // 显示错误信息
+        function showError(message) {
+            const grid = document.getElementById('photoGrid');
+            grid.innerHTML = `<div class="error">${message}</div>`;
+        }
+        
+        // 打开预览
+        function openPreview(index) {
+            currentImageIndex = index;
+            updatePreviewImage();
+            document.getElementById('previewModal').style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // 关闭预览
+        function closePreview() {
+            document.getElementById('previewModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+        
+        // 切换图片
+        function changeImage(direction) {
+            currentImageIndex += direction;
+            if (currentImageIndex < 0) currentImageIndex = allImages.length - 1;
+            if (currentImageIndex >= allImages.length) currentImageIndex = 0;
+            updatePreviewImage();
+        }
+        
+        // 更新预览图片
+        function updatePreviewImage() {
+            const img = document.getElementById('previewImage');
+            const counter = document.getElementById('imageCounter');
+            if (allImages[currentImageIndex]) {
+                img.src = allImages[currentImageIndex].url;
+                counter.textContent = `${currentImageIndex + 1} / ${allImages.length}`;
+            }
+        }
+        
+        // 键盘导航
+        document.addEventListener('keydown', function(e) {
+            if (document.getElementById('previewModal').style.display === 'block') {
+                if (e.key === 'ArrowLeft') changeImage(-1);
+                if (e.key === 'ArrowRight') changeImage(1);
+                if (e.key === 'Escape') closePreview();
+            }
+        });
+        
+        // 触摸滑动支持
+        let startX = 0;
+        const previewContent = document.querySelector('.preview-content');
+        
+        previewContent.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+        });
+        
+        previewContent.addEventListener('touchend', (e) => {
+            const endX = e.changedTouches[0].clientX;
+            const diff = startX - endX;
+            
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) {
+                    changeImage(1);
+                } else {
+                    changeImage(-1);
+                }
+            }
+        });
+        
+        // 初始化加载
+        loadImageList();
+    </script>
+</body>
+</html>
